@@ -221,14 +221,14 @@ impl ButtonName {
 
     fn nes_index(self) -> usize {
         match self {
-            Self::Right => 0,
-            Self::Left => 1,
-            Self::Up => 2,
-            Self::Down => 3,
-            Self::A => 4,
-            Self::B => 5,
-            Self::Select => 6,
-            Self::Start => 7,
+            Self::A => 0,
+            Self::B => 1,
+            Self::Select => 2,
+            Self::Start => 3,
+            Self::Up => 4,
+            Self::Down => 5,
+            Self::Left => 6,
+            Self::Right => 7,
         }
     }
 
@@ -293,3 +293,26 @@ const GAME_BOY_VIDEO: VideoSpec = VideoSpec {
 
 const GAME_BOY_PALETTE: [[u8; 3]; 4] =
     [[224, 248, 208], [136, 192, 112], [52, 104, 86], [8, 24, 32]];
+
+#[cfg(test)]
+mod tests {
+    use super::ButtonName;
+
+    #[test]
+    fn maps_nes_buttons_to_serial_controller_order() {
+        let expected = [
+            (ButtonName::A, 0),
+            (ButtonName::B, 1),
+            (ButtonName::Select, 2),
+            (ButtonName::Start, 3),
+            (ButtonName::Up, 4),
+            (ButtonName::Down, 5),
+            (ButtonName::Left, 6),
+            (ButtonName::Right, 7),
+        ];
+
+        for (button, index) in expected {
+            assert_eq!(button.nes_index(), index);
+        }
+    }
+}
