@@ -1,38 +1,181 @@
 import init, { WebEmulator } from './pkg/onwemu.js';
 
-let system = 'nes', emulator = null, animation = 0, wasmReady;
-const $ = id => document.getElementById(id);
-const ext = { nes: '.nes', gb: '.gb' };
-const keymap = { ArrowUp:'up', ArrowDown:'down', ArrowLeft:'left', ArrowRight:'right', z:'a', Z:'a', x:'b', X:'b', Enter:'start', Shift:'select' };
+const SYSTEMS = {
+  nes: { extension: '.nes' },
+  gb: { extension: '.gb' },
+};
 
-document.querySelectorAll('.system').forEach(button => button.onclick = () => {
-  document.querySelectorAll('.system').forEach(x => { x.classList.toggle('active', x === button); x.setAttribute('aria-checked', x === button); });
-  system = button.dataset.system; $('rom').accept = ext[system]; $('error').textContent = '';
+const KEY_MAP = {
+  arrowup: 'up',
+  arrowdown: 'down',
+  arrowleft: 'left',
+  arrowright: 'right',
+  z: 'a',
+  x: 'b',
+  enter: 'start',
+  shift: 'select',
+};
+
+const ui = {
+  change: document.getElementById('change'),
+  drop: document.getElementById('drop'),
+  error: document.getElementById('error'),
+  filename: document.getElementById('filename'),
+  picker: document.getElementById('picker'),
+  player: document.getElementById('player'),
+  rom: document.getElementById('rom'),
+  screen: document.getElementById('screen'),
+  systems: document.querySelectorAll('.system'),
+};
+
+const screenContext = ui.screen.getContext('2d');
+if (!screenContext) {
+  throw new Error('Unable to create a canvas rendering context');
+}
+
+const state = {
+  animationId: 0,
+  emulator: null,
+  height: 0,
+  system: 'nes',
+  wasmReady: null,
+  width: 0,
+};
+
+function setError(message = '') {
+  ui.error.textContent = message;
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function stopRendering() {
+  cancelAnimationFrame(state.animationId);
+  state.animationId = 0;
+}
+
+function disposeEmulator() {
+  stopRendering();
+  state.emulator?.free();
+  state.emulator = null;
+  state.width = 0;
+  state.height = 0;
+}
+
+function showPicker(message = '') {
+  disposeEmulator();
+  ui.player.hidden = true;
+  ui.picker.hidden = false;
+  ui.rom.value = '';
+  setError(message);
+}
+
+function selectSystem(system) {
+  if (!SYSTEMS[system]) return;
+
+  state.system = system;
+  ui.systems.forEach((button) => {
+    const selected = button.dataset.system === system;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-checked', selected);
+  });
+  ui.rom.accept = SYSTEMS[system].extension;
+  setError();
+}
+
+function loadWasm() {
+  state.wasmReady ??= init();
+  return state.wasmReady;
+}
+
+function startEmulator(emulator, filename) {
+  disposeEmulator();
+  state.emulator = emulator;
+  state.width = emulator.width();
+  state.height = emulator.height();
+
+  ui.screen.width = state.width;
+  ui.screen.height = state.height;
+  ui.screen.style.aspectRatio = `${state.width} / ${state.height}`;
+  ui.filename.textContent = filename;
+  ui.picker.hidden = true;
+  ui.player.hidden = false;
+
+  renderFrame();
+}
+
+function renderFrame() {
+  if (!state.emulator) return;
+
+  try {
+    const pixels = state.emulator.run_frame();
+    const expectedLength = state.width * state.height * 4;
+    if (pixels.length !== expectedLength) {
+      throw new Error(`Invalid frame size: expected ${expectedLength} bytes, got ${pixels.length}`);
+    }
+
+    const image = new ImageData(
+      new Uint8ClampedArray(pixels),
+      state.width,
+      state.height,
+    );
+    screenContext.putImageData(image, 0, 0);
+    state.animationId = requestAnimationFrame(renderFrame);
+  } catch (error) {
+    showPicker(errorMessage(error));
+  }
+}
+
+async function loadRom(file) {
+  if (!file) return;
+
+  const { extension } = SYSTEMS[state.system];
+  setError();
+  if (!file.name.toLowerCase().endsWith(extension)) {
+    setError(`That does not look like a ${extension} file.`);
+    return;
+  }
+
+  try {
+    await loadWasm();
+    const rom = new Uint8Array(await file.arrayBuffer());
+    const emulator = new WebEmulator(state.system, rom);
+    startEmulator(emulator, file.name);
+  } catch (error) {
+    showPicker(errorMessage(error));
+  }
+}
+
+function handleKey(event, down) {
+  const button = KEY_MAP[event.key.toLowerCase()];
+  if (!state.emulator || !button) return;
+
+  event.preventDefault();
+  state.emulator.set_button(button, down);
+}
+
+ui.systems.forEach((button) => {
+  button.addEventListener('click', () => selectSystem(button.dataset.system));
 });
 
-async function load(file) {
-  $('error').textContent = '';
-  if (!file.name.toLowerCase().endsWith(ext[system])) return void ($('error').textContent = `That does not look like a ${ext[system]} file.`);
-  try {
-    await (wasmReady ??= init());
-    emulator?.free();
-    emulator = new WebEmulator(system, new Uint8Array(await file.arrayBuffer()));
-    const canvas = $('screen'); canvas.width = emulator.width; canvas.height = emulator.height;
-    canvas.style.aspectRatio = `${canvas.width}/${canvas.height}`;
-    $('filename').textContent = file.name; $('picker').hidden = true; $('player').hidden = false;
-    cancelAnimationFrame(animation); frame();
-  } catch (error) { $('picker').hidden = false; $('player').hidden = true; $('error').textContent = error.message || String(error); }
-}
-function frame() {
-  if (!emulator) return;
-  const pixels = emulator.run_frame();
-  $('screen').getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(pixels), emulator.width, emulator.height), 0, 0);
-  animation = requestAnimationFrame(frame);
-}
-$('rom').onchange = event => event.target.files[0] && load(event.target.files[0]);
-$('change').onclick = () => { cancelAnimationFrame(animation); emulator?.free(); emulator = null; $('player').hidden = true; $('picker').hidden = false; $('rom').value = ''; };
-['dragenter','dragover'].forEach(name => $('drop').addEventListener(name, e => { e.preventDefault(); $('drop').classList.add('over'); }));
-['dragleave','drop'].forEach(name => $('drop').addEventListener(name, e => { e.preventDefault(); $('drop').classList.remove('over'); }));
-$('drop').addEventListener('drop', e => e.dataTransfer.files[0] && load(e.dataTransfer.files[0]));
-addEventListener('keydown', e => { if (emulator && keymap[e.key]) { e.preventDefault(); emulator.set_button(keymap[e.key], true); } });
-addEventListener('keyup', e => { if (emulator && keymap[e.key]) { e.preventDefault(); emulator.set_button(keymap[e.key], false); } });
+ui.rom.addEventListener('change', (event) => loadRom(event.target.files[0]));
+ui.change.addEventListener('click', () => showPicker());
+
+['dragenter', 'dragover'].forEach((eventName) => {
+  ui.drop.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    ui.drop.classList.add('over');
+  });
+});
+
+['dragleave', 'drop'].forEach((eventName) => {
+  ui.drop.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    ui.drop.classList.remove('over');
+  });
+});
+
+ui.drop.addEventListener('drop', (event) => loadRom(event.dataTransfer.files[0]));
+addEventListener('keydown', (event) => handleKey(event, true));
+addEventListener('keyup', (event) => handleKey(event, false));

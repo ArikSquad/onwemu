@@ -888,7 +888,7 @@ impl Cpu {
                 if mode != 8 {
                     b.write(addr, self.a);
                     return match mode {
-                        0 | 1 | 2 => 3,
+                        0..=2 => 3,
                         3 => 4,
                         4 | 5 => 5,
                         _ => 6,
