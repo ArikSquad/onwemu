@@ -260,7 +260,7 @@ impl Ppu {
             }
             7 => {
                 self.write_mem(self.v, val);
-                self.v = self.v.wrapping_add(if self.ctrl & 4 != 0 { 32 } else { 1 })
+                self.v = self.v.wrapping_add(if self.ctrl & 4 != 0 { 32 } else { 1 });
             }
             _ => {}
         }
@@ -829,12 +829,23 @@ impl Cpu {
         } else {
             self.addr(b, mode)
         };
+        let group = op & 0xe0;
+
+        if group == 0x80 && mode != 8 {
+            b.write(addr, self.a);
+            return match mode {
+                0..=2 => 3,
+                3 => 4,
+                4 | 5 => 5,
+                _ => 6,
+            };
+        }
+
         let mut v = if mode == 8 {
             self.fetch(b)
         } else {
             b.read(addr)
         };
-        let group = op & 0xe0;
         if lo == 0x06 || lo == 0x16 || lo == 0x0e || lo == 0x1e {
             let kind = op & 0xe0;
             match kind {
@@ -884,17 +895,7 @@ impl Cpu {
                 self.zn(self.a)
             }
             0x60 => self.adc(v),
-            0x80 => {
-                if mode != 8 {
-                    b.write(addr, self.a);
-                    return match mode {
-                        0..=2 => 3,
-                        3 => 4,
-                        4 | 5 => 5,
-                        _ => 6,
-                    };
-                }
-            }
+            0x80 => {}
             0xa0 => {
                 self.a = v;
                 self.zn(v)
@@ -939,5 +940,22 @@ mod tests {
         e.run_frame();
         assert_eq!(e.pc(), 0x8000);
         assert_eq!(e.framebuffer().len(), WIDTH * HEIGHT)
+    }
+
+    #[test]
+    fn stores_to_ppu_data_without_reading_it_first() {
+        let mut data = rom();
+        data[16..22].copy_from_slice(&[0xa9, 0x20, 0x8d, 0x06, 0x20, 0xa9]);
+        data[22..28].copy_from_slice(&[0x00, 0x8d, 0x06, 0x20, 0xa9, 0x42]);
+        data[28..31].copy_from_slice(&[0x8d, 0x07, 0x20]);
+
+        let mut e = Emulator::new(&data).unwrap();
+        for _ in 0..6 {
+            e.cpu.step(&mut e.bus);
+        }
+
+        assert_eq!(e.bus.ppu.nt[0], 0x42);
+        assert_eq!(e.bus.ppu.nt[1], 0);
+        assert_eq!(e.bus.ppu.v, 0x2001);
     }
 }
