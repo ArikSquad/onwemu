@@ -1,4 +1,4 @@
-use gbsml::{Emulator, cartridge::Cartridge};
+use onwemu::{Emulator, cartridge::Cartridge};
 
 fn rom(program: &[u8]) -> Cartridge {
     let mut data = vec![0; 0x8000];

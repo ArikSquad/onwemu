@@ -1,18 +1,24 @@
 [package]
-name = "gbsml"
+name = "onwemu"
 version = "0.1.0"
 edition = "2024"
-description = "A clean, cycle-driven Nintendo Game Boy DMG emulator"
+description = "A private, bring-your-own-ROM NES and Game Boy emulator for the web"
 license = "MIT"
 
 [features]
 default = []
 desktop = ["dep:minifb"]
+web = ["dep:wasm-bindgen", "dep:console_error_panic_hook"]
 
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 minifb = { version = "0.28", optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
+
+[lib]
+crate-type = ["cdylib", "rlib"]
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -27,3 +33,5 @@ required-features = ["desktop"]
 name = "gbsml-headless"
 path = "src/bin/headless.rs"
 
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz"]

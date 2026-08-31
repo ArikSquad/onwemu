@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 use clap::Parser;
-use gbsml::{Emulator, cartridge::Cartridge};
+use onwemu::{Emulator, cartridge::Cartridge};
 use std::{path::PathBuf, time::Duration};
 
 #[derive(Parser)]
@@ -20,11 +20,11 @@ fn main() -> Result<()> {
     for _ in 0..limit {
         emu.run_frame();
         let out = emu.bus.serial_output();
-        if out.ends_with(b"Passed") {
+        if out.windows(b"Passed".len()).any(|part| part == b"Passed") {
             println!("{}", String::from_utf8_lossy(out));
             return Ok(());
         }
-        if out.ends_with(b"Failed") {
+        if out.windows(b"Failed".len()).any(|part| part == b"Failed") {
             bail!("{}", String::from_utf8_lossy(out))
         }
     }

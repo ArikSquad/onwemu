@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
-use gbsml::{Button, Emulator, cartridge::Cartridge};
 use minifb::{Key, Scale, Window, WindowOptions};
+use onwemu::{Button, Emulator, cartridge::Cartridge};
 use std::{
     path::PathBuf,
     time::{Duration, Instant},

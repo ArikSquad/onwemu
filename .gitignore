@@ -1,7 +1,9 @@
 *.gb
+*.nes
 tests/roms/
 target/
 build/
 *.gbc
-
-
+node_modules/
+dist/
+web/pkg/

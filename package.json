@@ -1,0 +1,11 @@
+{
+  "name": "onwemu",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "wasm-pack build --release --target web --out-dir web/pkg --features web && rm -rf dist && cp -R web dist",
+    "dev": "wasm-pack build --dev --target web --out-dir web/pkg --features web && npx serve web",
+    "test": "cargo test --all-targets"
+  },
+  "devDependencies": { "serve": "^14.2.5", "wasm-pack": "^0.15.0" }
+}
