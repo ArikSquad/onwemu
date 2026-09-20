@@ -2,7 +2,7 @@
 
 use wasm_bindgen::prelude::*;
 
-use crate::{Button, Emulator as GbEmulator, cartridge::Cartridge, nes::Emulator as NesEmulator};
+use crate::core::{self, Button, Core, Input, PixelFormat, System};
 
 const NES_PALETTE: [[u8; 3]; 64] = [
     [84, 84, 84],
@@ -73,19 +73,8 @@ const NES_PALETTE: [[u8; 3]; 64] = [
 
 #[wasm_bindgen]
 pub struct WebEmulator {
-    machine: Machine,
+    machine: Box<dyn Core>,
     video: VideoFrame,
-}
-
-enum Machine {
-    Nes(Box<NesEmulator>),
-    GameBoy(Box<GbEmulator>),
-}
-
-#[derive(Clone, Copy)]
-enum System {
-    Nes,
-    GameBoy,
 }
 
 impl System {
@@ -93,52 +82,8 @@ impl System {
         match name {
             "nes" => Ok(Self::Nes),
             "gb" => Ok(Self::GameBoy),
-            _ => Err(JsError::new("Choose NES or Game Boy")),
-        }
-    }
-
-    fn video_spec(self) -> VideoSpec {
-        match self {
-            Self::Nes => NES_VIDEO,
-            Self::GameBoy => GAME_BOY_VIDEO,
-        }
-    }
-}
-
-impl Machine {
-    fn new(system: System, rom: &[u8]) -> Result<Self, JsError> {
-        match system {
-            System::Nes => NesEmulator::new(rom)
-                .map(|emulator| Self::Nes(Box::new(emulator)))
-                .map_err(|error| JsError::new(&error)),
-            System::GameBoy => Cartridge::from_bytes(rom.to_vec())
-                .map(|cartridge| Self::GameBoy(Box::new(GbEmulator::new(cartridge))))
-                .map_err(|error| JsError::new(&error.to_string())),
-        }
-    }
-
-    fn run_frame(&mut self) {
-        match self {
-            Self::Nes(emulator) => emulator.run_frame(),
-            Self::GameBoy(emulator) => emulator.run_frame(),
-        }
-    }
-
-    fn framebuffer(&self) -> &[u8] {
-        match self {
-            Self::Nes(emulator) => emulator.framebuffer(),
-            Self::GameBoy(emulator) => emulator.framebuffer(),
-        }
-    }
-
-    fn set_button(&mut self, name: &str, down: bool) {
-        let Some(button) = ButtonName::parse(name) else {
-            return;
-        };
-
-        match self {
-            Self::Nes(emulator) => emulator.set_button(button.nes_index(), down),
-            Self::GameBoy(emulator) => emulator.set_button(button.game_boy(), down),
+            "psp" => Ok(Self::Psp),
+            _ => Err(JsError::new("Choose NES, Game Boy, or PSP")),
         }
     }
 }
@@ -165,11 +110,18 @@ impl VideoFrame {
     }
 
     fn update(&mut self, pixels: &[u8]) {
-        debug_assert_eq!(pixels.len(), self.spec.pixel_count());
-        for (pixel, rgba) in pixels.iter().zip(self.rgba.chunks_exact_mut(4)) {
-            let color = self.spec.palette[(*pixel & self.spec.pixel_mask) as usize];
-            rgba[..3].copy_from_slice(&color);
-            rgba[3] = 0xff;
+        if self.spec.pixel_format == PixelFormat::Rgba8888 {
+            debug_assert_eq!(pixels.len(), self.rgba.len());
+            self.rgba.copy_from_slice(pixels);
+        } else {
+            debug_assert_eq!(pixels.len(), self.spec.pixel_count());
+            let (rgba, remainder) = self.rgba.as_chunks_mut::<4>();
+            debug_assert!(remainder.is_empty());
+            for (pixel, rgba) in pixels.iter().zip(rgba) {
+                let color = self.spec.palette[(*pixel & self.spec.pixel_mask) as usize];
+                rgba[..3].copy_from_slice(&color);
+                rgba[3] = 0xff;
+            }
         }
     }
 
@@ -184,66 +136,53 @@ struct VideoSpec {
     height: u32,
     palette: &'static [[u8; 3]],
     pixel_mask: u8,
+    pixel_format: PixelFormat,
 }
 
 impl VideoSpec {
     fn pixel_count(self) -> usize {
         self.width as usize * self.height as usize
     }
-}
 
-#[derive(Clone, Copy)]
-enum ButtonName {
-    A,
-    B,
-    Select,
-    Start,
-    Up,
-    Down,
-    Left,
-    Right,
-}
-
-impl ButtonName {
-    fn parse(name: &str) -> Option<Self> {
-        Some(match name {
-            "a" => Self::A,
-            "b" => Self::B,
-            "select" => Self::Select,
-            "start" => Self::Start,
-            "up" => Self::Up,
-            "down" => Self::Down,
-            "left" => Self::Left,
-            "right" => Self::Right,
-            _ => return None,
-        })
-    }
-
-    fn nes_index(self) -> usize {
-        match self {
-            Self::A => 0,
-            Self::B => 1,
-            Self::Select => 2,
-            Self::Start => 3,
-            Self::Up => 4,
-            Self::Down => 5,
-            Self::Left => 6,
-            Self::Right => 7,
+    fn from_core(format: core::VideoFormat) -> Self {
+        match format.pixel_format {
+            PixelFormat::Indexed2 => Self {
+                width: format.width,
+                height: format.height,
+                palette: &GAME_BOY_PALETTE,
+                pixel_mask: 0x03,
+                pixel_format: format.pixel_format,
+            },
+            PixelFormat::Indexed6 => Self {
+                width: format.width,
+                height: format.height,
+                palette: &NES_PALETTE,
+                pixel_mask: 0x3f,
+                pixel_format: format.pixel_format,
+            },
+            PixelFormat::Rgba8888 => Self {
+                width: format.width,
+                height: format.height,
+                palette: &[],
+                pixel_mask: 0xff,
+                pixel_format: format.pixel_format,
+            },
         }
     }
+}
 
-    fn game_boy(self) -> Button {
-        match self {
-            Self::Right => Button::Right,
-            Self::Left => Button::Left,
-            Self::Up => Button::Up,
-            Self::Down => Button::Down,
-            Self::A => Button::A,
-            Self::B => Button::B,
-            Self::Select => Button::Select,
-            Self::Start => Button::Start,
-        }
-    }
+fn parse_button(name: &str) -> Option<Button> {
+    Some(match name {
+        "a" => Button::Primary,
+        "b" => Button::Secondary,
+        "select" => Button::Select,
+        "start" => Button::Start,
+        "up" => Button::Up,
+        "down" => Button::Down,
+        "left" => Button::Left,
+        "right" => Button::Right,
+        _ => return None,
+    })
 }
 
 #[wasm_bindgen]
@@ -252,10 +191,9 @@ impl WebEmulator {
     pub fn new(system: &str, rom: &[u8]) -> Result<WebEmulator, JsError> {
         console_error_panic_hook::set_once();
         let system = System::parse(system)?;
-        Ok(Self {
-            machine: Machine::new(system, rom)?,
-            video: VideoFrame::new(system.video_spec()),
-        })
+        let machine = core::create(system, rom).map_err(|error| JsError::new(&error))?;
+        let video = VideoFrame::new(VideoSpec::from_core(machine.video_format()));
+        Ok(Self { machine, video })
     }
 
     pub fn width(&self) -> u32 {
@@ -273,46 +211,36 @@ impl WebEmulator {
     }
 
     pub fn set_button(&mut self, name: &str, down: bool) {
-        self.machine.set_button(name, down);
+        if let Some(button) = parse_button(name) {
+            self.machine.input(Input::Button(button, down));
+        }
+    }
+
+    /// Returns battery-backed cartridge data, or an empty vector for systems
+    /// without persistent storage.
+    pub fn save_data(&self) -> Vec<u8> {
+        self.machine.save_data().unwrap_or_default()
+    }
+
+    pub fn load_save_data(&mut self, data: &[u8]) -> Result<(), JsError> {
+        self.machine
+            .load_save_data(data)
+            .map_err(|error| JsError::new(&error))
     }
 }
-
-const NES_VIDEO: VideoSpec = VideoSpec {
-    width: 256,
-    height: 240,
-    palette: &NES_PALETTE,
-    pixel_mask: 0x3f,
-};
-
-const GAME_BOY_VIDEO: VideoSpec = VideoSpec {
-    width: 160,
-    height: 144,
-    palette: &GAME_BOY_PALETTE,
-    pixel_mask: 0x03,
-};
 
 const GAME_BOY_PALETTE: [[u8; 3]; 4] =
     [[224, 248, 208], [136, 192, 112], [52, 104, 86], [8, 24, 32]];
 
 #[cfg(test)]
 mod tests {
-    use super::ButtonName;
+    use super::parse_button;
+    use crate::core::Button;
 
     #[test]
     fn maps_nes_buttons_to_serial_controller_order() {
-        let expected = [
-            (ButtonName::A, 0),
-            (ButtonName::B, 1),
-            (ButtonName::Select, 2),
-            (ButtonName::Start, 3),
-            (ButtonName::Up, 4),
-            (ButtonName::Down, 5),
-            (ButtonName::Left, 6),
-            (ButtonName::Right, 7),
-        ];
-
-        for (button, index) in expected {
-            assert_eq!(button.nes_index(), index);
-        }
+        assert_eq!(parse_button("a"), Some(Button::Primary));
+        assert_eq!(parse_button("right"), Some(Button::Right));
+        assert_eq!(parse_button("unknown"), None);
     }
 }

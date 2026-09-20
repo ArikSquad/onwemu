@@ -1,5 +1,8 @@
 //! Repository-owned NES (NTSC RP2A03/2C02) emulator core.
-//! The current cartridge scope intentionally matches nesma: iNES mapper 0 (NROM).
+
+mod cartridge;
+
+use cartridge::{Cartridge, Mirroring};
 
 const WIDTH: usize = 256;
 const HEIGHT: usize = 240;
@@ -38,40 +41,44 @@ impl Emulator {
     }
 }
 
-struct Cartridge {
-    prg: Vec<u8>,
-    chr: Vec<u8>,
-    chr_ram: bool,
-    vertical: bool,
-}
-impl Cartridge {
-    fn new(data: &[u8]) -> Result<Self, String> {
-        if data.len() < 16 || &data[..4] != b"NES\x1a" {
-            return Err("Not an iNES ROM".into());
+impl crate::core::Core for Emulator {
+    fn system(&self) -> crate::core::System {
+        crate::core::System::Nes
+    }
+
+    fn video_format(&self) -> crate::core::VideoFormat {
+        crate::core::VideoFormat {
+            width: WIDTH as u32,
+            height: HEIGHT as u32,
+            pixel_format: crate::core::PixelFormat::Indexed6,
         }
-        let mapper = (data[6] >> 4) | (data[7] & 0xf0);
-        if mapper != 0 {
-            return Err(format!(
-                "Mapper {mapper} is unsupported; this core currently supports NROM (mapper 0)"
-            ));
-        }
-        let trainer = if data[6] & 4 != 0 { 512 } else { 0 };
-        let prg_len = data[4] as usize * 0x4000;
-        let chr_len = data[5] as usize * 0x2000;
-        let start = 16 + trainer;
-        if prg_len == 0 || data.len() < start + prg_len + chr_len {
-            return Err("Truncated iNES ROM".into());
-        }
-        Ok(Self {
-            prg: data[start..start + prg_len].to_vec(),
-            chr: if chr_len == 0 {
-                vec![0; 0x2000]
-            } else {
-                data[start + prg_len..start + prg_len + chr_len].to_vec()
-            },
-            chr_ram: chr_len == 0,
-            vertical: data[6] & 1 != 0,
-        })
+    }
+
+    fn run_frame(&mut self) {
+        Emulator::run_frame(self)
+    }
+
+    fn framebuffer(&self) -> &[u8] {
+        Emulator::framebuffer(self)
+    }
+
+    fn input(&mut self, input: crate::core::Input) {
+        use crate::core::{Button, Input};
+        let Input::Button(button, down) = input else {
+            return;
+        };
+        let index = match button {
+            Button::Primary => 0,
+            Button::Secondary => 1,
+            Button::Select => 2,
+            Button::Start => 3,
+            Button::Up => 4,
+            Button::Down => 5,
+            Button::Left => 6,
+            Button::Right => 7,
+            _ => return,
+        };
+        self.set_button(index, down);
     }
 }
 
@@ -107,10 +114,7 @@ impl Controller {
 }
 
 struct Ppu {
-    chr: Vec<u8>,
-    chr_ram: bool,
-    vertical: bool,
-    nt: [u8; 0x800],
+    nt: [u8; 0x1000],
     pal: [u8; 32],
     oam: [u8; 256],
     frame: Vec<u8>,
@@ -130,12 +134,9 @@ struct Ppu {
     nmi: bool,
 }
 impl Ppu {
-    fn new(cart: &Cartridge) -> Self {
+    fn new() -> Self {
         Self {
-            chr: cart.chr.clone(),
-            chr_ram: cart.chr_ram,
-            vertical: cart.vertical,
-            nt: [0; 0x800],
+            nt: [0; 0x1000],
             pal: [0; 32],
             oam: [0; 256],
             frame: vec![0; WIDTH * HEIGHT],
@@ -155,13 +156,15 @@ impl Ppu {
             nmi: false,
         }
     }
-    fn mirror(&self, a: u16) -> usize {
+    fn mirror(cart: &Cartridge, a: u16) -> usize {
         let a = (a - 0x2000) & 0xfff;
         let table = a / 0x400;
-        let table = if self.vertical {
-            table & 1
-        } else {
-            (table >> 1) & 1
+        let table = match cart.mirroring() {
+            Mirroring::Horizontal => (table >> 1) & 1,
+            Mirroring::Vertical => table & 1,
+            Mirroring::OneScreenLower => 0,
+            Mirroring::OneScreenUpper => 1,
+            Mirroring::FourScreen => table,
         };
         (table * 0x400 + (a & 0x3ff)) as usize
     }
@@ -172,30 +175,28 @@ impl Ppu {
         }
         a
     }
-    fn read_mem(&self, a: u16) -> u8 {
+    fn read_mem(&self, cart: &Cartridge, a: u16) -> u8 {
         let a = a & 0x3fff;
         if a < 0x2000 {
-            self.chr[a as usize]
+            cart.ppu_read(a)
         } else if a < 0x3f00 {
-            self.nt[self.mirror(a)]
+            self.nt[Self::mirror(cart, a)]
         } else {
             self.pal[Self::pal_addr(a)] & 0x3f
         }
     }
-    fn write_mem(&mut self, a: u16, val: u8) {
+    fn write_mem(&mut self, cart: &mut Cartridge, a: u16, val: u8) {
         let a = a & 0x3fff;
         if a < 0x2000 {
-            if self.chr_ram {
-                self.chr[a as usize] = val
-            }
+            cart.ppu_write(a, val)
         } else if a < 0x3f00 {
-            let i = self.mirror(a);
+            let i = Self::mirror(cart, a);
             self.nt[i] = val
         } else {
             self.pal[Self::pal_addr(a)] = val & 0x3f
         }
     }
-    fn read_reg(&mut self, a: u16) -> u8 {
+    fn read_reg(&mut self, cart: &Cartridge, a: u16) -> u8 {
         match a & 7 {
             2 => {
                 let r = (self.status & 0xe0) | (self.bus & 0x1f);
@@ -211,12 +212,12 @@ impl Ppu {
             7 => {
                 let old = self.v;
                 let r = if old & 0x3fff >= 0x3f00 {
-                    let r = self.read_mem(old);
-                    self.buffer = self.read_mem(old - 0x1000);
+                    let r = self.read_mem(cart, old);
+                    self.buffer = self.read_mem(cart, old - 0x1000);
                     r
                 } else {
                     let r = self.buffer;
-                    self.buffer = self.read_mem(old);
+                    self.buffer = self.read_mem(cart, old);
                     r
                 };
                 self.v = self.v.wrapping_add(if self.ctrl & 4 != 0 { 32 } else { 1 });
@@ -226,7 +227,7 @@ impl Ppu {
             _ => self.bus,
         }
     }
-    fn write_reg(&mut self, a: u16, val: u8) {
+    fn write_reg(&mut self, cart: &mut Cartridge, a: u16, val: u8) {
         self.bus = val;
         match a & 7 {
             0 => {
@@ -259,7 +260,7 @@ impl Ppu {
                 self.latch = !self.latch
             }
             7 => {
-                self.write_mem(self.v, val);
+                self.write_mem(cart, self.v, val);
                 self.v = self.v.wrapping_add(if self.ctrl & 4 != 0 { 32 } else { 1 });
             }
             _ => {}
@@ -290,24 +291,27 @@ impl Ppu {
             self.v = (self.v & !0x3e0) | (y << 5)
         }
     }
-    fn bg(&self, px: usize) -> u8 {
+    fn bg(&self, cart: &Cartridge, px: usize) -> u8 {
         if self.mask & 8 == 0 || (px < 8 && self.mask & 2 == 0) {
             return 0;
         }
         let fx = (px + self.fine_x as usize) & 7;
-        let tile = self.read_mem(0x2000 | (self.v & 0xfff));
-        let attr =
-            self.read_mem(0x23c0 | (self.v & 0xc00) | ((self.v >> 4) & 0x38) | ((self.v >> 2) & 7));
+        let tile = self.read_mem(cart, 0x2000 | (self.v & 0xfff));
+        let attr = self.read_mem(
+            cart,
+            0x23c0 | (self.v & 0xc00) | ((self.v >> 4) & 0x38) | ((self.v >> 2) & 7),
+        );
         let shift = ((self.v >> 4) & 4) | (self.v & 2);
         let hi = (attr >> shift) & 3;
         let pat = (if self.ctrl & 0x10 != 0 { 0x1000 } else { 0 })
             + tile as u16 * 16
             + ((self.v >> 12) & 7);
         let bit = 7 - fx;
-        let p = ((self.read_mem(pat) >> bit) & 1) | (((self.read_mem(pat + 8) >> bit) & 1) << 1);
+        let p = ((self.read_mem(cart, pat) >> bit) & 1)
+            | (((self.read_mem(cart, pat + 8) >> bit) & 1) << 1);
         if p == 0 { 0 } else { hi << 2 | p }
     }
-    fn sprite(&mut self, px: usize, py: usize, bg: bool) -> u8 {
+    fn sprite(&mut self, cart: &Cartridge, px: usize, py: usize, bg: bool) -> u8 {
         if self.mask & 0x10 == 0 || (px < 8 && self.mask & 4 == 0) {
             return 0;
         }
@@ -350,8 +354,9 @@ impl Ppu {
                 0
             };
             let bit = 7 - col as u8;
-            let p = ((self.read_mem(base + tile as u16 * 16 + row as u16) >> bit) & 1)
-                | (((self.read_mem(base + tile as u16 * 16 + row as u16 + 8) >> bit) & 1) << 1);
+            let p = ((self.read_mem(cart, base + tile as u16 * 16 + row as u16) >> bit) & 1)
+                | (((self.read_mem(cart, base + tile as u16 * 16 + row as u16 + 8) >> bit) & 1)
+                    << 1);
             if p == 0 {
                 continue;
             }
@@ -365,15 +370,15 @@ impl Ppu {
         }
         0
     }
-    fn tick(&mut self) {
+    fn tick(&mut self, cart: &mut Cartridge) {
         let rendering = self.mask & 0x18 != 0;
         if (0..240).contains(&self.scanline) && (1..=256).contains(&self.dot) {
             let px = self.dot as usize - 1;
-            let bg = self.bg(px);
-            let sp = self.sprite(px, self.scanline as usize, bg != 0);
+            let bg = self.bg(cart, px);
+            let sp = self.sprite(cart, px, self.scanline as usize, bg != 0);
             let idx = if sp != 0 { sp } else { bg };
             self.frame[self.scanline as usize * WIDTH + px] =
-                self.read_mem(0x3f00 + idx as u16) & 0x3f;
+                self.read_mem(cart, 0x3f00 + idx as u16) & 0x3f;
             if rendering && (px + self.fine_x as usize) & 7 == 7 {
                 self.inc_x()
             }
@@ -386,6 +391,9 @@ impl Ppu {
         }
         if rendering && self.scanline == 261 && (280..=304).contains(&self.dot) {
             self.v = (self.v & !0x7be0) | (self.t & 0x7be0)
+        }
+        if rendering && (0..240).contains(&self.scanline) && self.dot == 260 {
+            cart.scanline_tick();
         }
         if self.scanline == 241 && self.dot == 1 {
             self.status |= 0x80;
@@ -409,7 +417,7 @@ impl Ppu {
 
 struct Bus {
     ram: [u8; 0x800],
-    prg: Vec<u8>,
+    cart: Cartridge,
     ppu: Ppu,
     pad: Controller,
     pad2: Controller,
@@ -417,11 +425,10 @@ struct Bus {
 }
 impl Bus {
     fn new(cart: Cartridge) -> Self {
-        let ppu = Ppu::new(&cart);
         Self {
             ram: [0; 0x800],
-            prg: cart.prg,
-            ppu,
+            cart,
+            ppu: Ppu::new(),
             pad: Controller::default(),
             pad2: Controller::default(),
             dma_stall: 0,
@@ -430,17 +437,17 @@ impl Bus {
     fn read(&mut self, a: u16) -> u8 {
         match a {
             0..=0x1fff => self.ram[a as usize & 0x7ff],
-            0x2000..=0x3fff => self.ppu.read_reg(a),
+            0x2000..=0x3fff => self.ppu.read_reg(&self.cart, a),
             0x4016 => self.pad.read(),
             0x4017 => self.pad2.read(),
-            0x8000..=0xffff => self.prg[(a as usize - 0x8000) % self.prg.len()],
+            0x6000..=0xffff => self.cart.cpu_read(a),
             _ => 0,
         }
     }
     fn write(&mut self, a: u16, v: u8) {
         match a {
             0..=0x1fff => self.ram[a as usize & 0x7ff] = v,
-            0x2000..=0x3fff => self.ppu.write_reg(a, v),
+            0x2000..=0x3fff => self.ppu.write_reg(&mut self.cart, a, v),
             0x4014 => {
                 let base = (v as u16) << 8;
                 for i in 0..256 {
@@ -453,6 +460,7 @@ impl Bus {
                 self.pad.write(v);
                 self.pad2.write(v)
             }
+            0x6000..=0xffff => self.cart.cpu_write(a, v),
             _ => {}
         }
     }
@@ -461,7 +469,7 @@ impl Bus {
     }
     fn tick(&mut self, n: u16) {
         for _ in 0..n * 3 {
-            self.ppu.tick()
+            self.ppu.tick(&mut self.cart)
         }
     }
 }
@@ -598,6 +606,11 @@ impl Cpu {
             let n = b.dma_stall;
             b.dma_stall = 0;
             b.tick(n);
+            return;
+        }
+        if b.cart.irq_pending() && !self.flag(I) {
+            self.interrupt(b, 0xfffe, false);
+            b.tick(7);
             return;
         }
         let op = self.fetch(b);

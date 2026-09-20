@@ -115,6 +115,7 @@ impl Bus {
         self.write8(a.wrapping_add(1), (v >> 8) as u8);
     }
     pub fn tick(&mut self, cycles: u8) {
+        self.cart.tick(cycles as u32);
         for _ in 0..cycles {
             if self.timer.tick() {
                 self.interrupt_flags |= 4
