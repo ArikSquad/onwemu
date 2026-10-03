@@ -27,6 +27,7 @@ const ui = {
   drop: document.getElementById('drop'),
   error: document.getElementById('error'),
   filename: document.getElementById('filename'),
+  fullscreen: document.getElementById('fullscreen'),
   picker: document.getElementById('picker'),
   player: document.getElementById('player'),
   rom: document.getElementById('rom'),
@@ -71,6 +72,9 @@ function disposeEmulator() {
 }
 
 function showPicker(message = '') {
+  if (document.fullscreenElement === ui.player) {
+    document.exitFullscreen().catch(() => {});
+  }
   disposeEmulator();
   ui.player.hidden = true;
   ui.picker.hidden = false;
@@ -160,6 +164,7 @@ async function loadRom(file) {
 }
 
 function handleKey(event, down) {
+  if (event.key.toLowerCase() === 'escape' && document.fullscreenElement === ui.player) return;
   const button = KEY_MAP[event.key.toLowerCase()];
   if (!state.emulator || !button) return;
 
@@ -169,6 +174,30 @@ function handleKey(event, down) {
 
 ui.systems.forEach((button) => {
   button.addEventListener('click', () => selectSystem(button.dataset.system));
+});
+
+async function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement === ui.player) {
+      await document.exitFullscreen();
+    } else {
+      await ui.player.requestFullscreen();
+    }
+  } catch (error) {
+    ui.fullscreen.title = `Unable to change fullscreen mode: ${errorMessage(error)}`;
+  }
+}
+
+ui.fullscreen.disabled = typeof ui.player.requestFullscreen !== 'function';
+ui.fullscreen.title = ui.fullscreen.disabled
+  ? 'Fullscreen is not available in this browser'
+  : 'Enter fullscreen mode';
+ui.fullscreen.addEventListener('click', toggleFullscreen);
+document.addEventListener('fullscreenchange', () => {
+  const active = document.fullscreenElement === ui.player;
+  ui.fullscreen.textContent = active ? 'Exit fullscreen' : 'Fullscreen';
+  ui.fullscreen.setAttribute('aria-pressed', String(active));
+  ui.fullscreen.title = active ? 'Exit fullscreen mode' : 'Enter fullscreen mode';
 });
 
 ui.rom.addEventListener('change', (event) => loadRom(event.target.files[0]));

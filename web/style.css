@@ -3,3 +3,14 @@
 @media(max-width:600px){footer{height:auto;min-height:54px;flex-wrap:wrap;gap:12px;padding:12px 4vw}footer span{width:100%;margin-right:0}}
 
 footer{height:auto;min-height:54px;flex-wrap:wrap;padding-top:12px;padding-bottom:12px}
+
+.player-actions{display:flex;align-items:center;gap:18px}
+.player-bar button:disabled{cursor:not-allowed;opacity:.5}
+.player-bar button:focus-visible{outline:2px solid var(--red);outline-offset:3px}
+.player:fullscreen{width:100vw;height:100vh;max-width:none;display:flex;flex-direction:column;border:0;box-shadow:none}
+.player:fullscreen .player-bar{flex:none}
+.player:fullscreen .screen-wrap{flex:1;min-height:0;overflow:hidden;padding:24px}
+.player:fullscreen canvas{width:auto;height:100%;max-width:100%;max-height:100%}
+.player:fullscreen .controls{flex:none}
+
+@media(max-width:600px){.player-actions{gap:12px}.player:fullscreen .screen-wrap{padding:12px}.player:fullscreen .controls{gap:12px;padding:12px}}
