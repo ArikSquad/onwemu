@@ -181,6 +181,11 @@ fn parse_button(name: &str) -> Option<Button> {
         "down" => Button::Down,
         "left" => Button::Left,
         "right" => Button::Right,
+        "square" => Button::Auxiliary1,
+        "triangle" => Button::Auxiliary2,
+        "l" => Button::LeftShoulder,
+        "r" => Button::RightShoulder,
+        "home" => Button::Home,
         _ => return None,
     })
 }
@@ -204,16 +209,23 @@ impl WebEmulator {
         self.video.height()
     }
 
-    pub fn run_frame(&mut self) -> Vec<u8> {
+    pub fn run_frame(&mut self) -> Result<Vec<u8>, JsError> {
         self.machine.run_frame();
+        if let Some(error) = self.machine.failure() {
+            return Err(JsError::new(error));
+        }
         self.video.update(self.machine.framebuffer());
-        self.video.rgba()
+        Ok(self.video.rgba())
     }
 
     pub fn set_button(&mut self, name: &str, down: bool) {
         if let Some(button) = parse_button(name) {
             self.machine.input(Input::Button(button, down));
         }
+    }
+
+    pub fn set_analog(&mut self, x: f32, y: f32) {
+        self.machine.input(Input::Analog { x, y });
     }
 
     /// Returns battery-backed cartridge data, or an empty vector for systems

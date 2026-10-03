@@ -1,8 +1,9 @@
 import init, { WebEmulator } from './pkg/onwemu.js';
 
 const SYSTEMS = {
-  nes: { extension: '.nes' },
-  gb: { extension: '.gb' },
+  nes: { extensions: ['.nes'] },
+  gb: { extensions: ['.gb'] },
+  psp: { extensions: ['.iso', '.chd', '.pbp', '.elf'] },
 };
 
 const KEY_MAP = {
@@ -12,8 +13,13 @@ const KEY_MAP = {
   arrowright: 'right',
   z: 'a',
   x: 'b',
+  c: 'square',
+  v: 'triangle',
+  q: 'l',
+  e: 'r',
   enter: 'start',
   shift: 'select',
+  escape: 'home',
 };
 
 const ui = {
@@ -26,6 +32,7 @@ const ui = {
   rom: document.getElementById('rom'),
   screen: document.getElementById('screen'),
   systems: document.querySelectorAll('.system'),
+  controls: document.getElementById('controls'),
 };
 
 const screenContext = ui.screen.getContext('2d');
@@ -80,9 +87,14 @@ function selectSystem(system) {
     button.classList.toggle('active', selected);
     button.setAttribute('aria-checked', selected);
   });
-  ui.rom.accept = SYSTEMS[system].extension;
+  ui.rom.accept = SYSTEMS[system].extensions.join(',');
+  ui.controls.innerHTML = system === 'psp'
+    ? '<span>Move <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd></span><span>Cross <kbd>Z</kbd></span><span>Circle <kbd>X</kbd></span><span>Square <kbd>C</kbd></span><span>Triangle <kbd>V</kbd></span><span>L/R <kbd>Q</kbd><kbd>E</kbd></span><span>Start <kbd>Enter</kbd></span><span>Select <kbd>Shift</kbd></span><span>Home <kbd>Esc</kbd></span>'
+    : '<span>Move <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd></span><span>A <kbd>Z</kbd></span><span>B <kbd>X</kbd></span><span>Start <kbd>Enter</kbd></span><span>Select <kbd>Shift</kbd></span>';
   setError();
 }
+
+selectSystem(state.system);
 
 function loadWasm() {
   state.wasmReady ??= init();
@@ -130,10 +142,10 @@ function renderFrame() {
 async function loadRom(file) {
   if (!file) return;
 
-  const { extension } = SYSTEMS[state.system];
+  const { extensions } = SYSTEMS[state.system];
   setError();
-  if (!file.name.toLowerCase().endsWith(extension)) {
-    setError(`That does not look like a ${extension} file.`);
+  if (!extensions.some((extension) => file.name.toLowerCase().endsWith(extension))) {
+    setError(`Choose a supported file: ${extensions.join(', ')}.`);
     return;
   }
 

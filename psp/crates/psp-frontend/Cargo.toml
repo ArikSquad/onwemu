@@ -1,0 +1,17 @@
+[package]
+name = "psp-rs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "psp-rs"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[features]
+default = ["desktop"]
+desktop = ["psp-runtime/desktop"]
+
+[dependencies]
+psp-runtime = { path = "../psp-runtime", default-features = false }

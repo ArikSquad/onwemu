@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+#
+# usage:
+#   ./play game.chd                        graphical, scale 2x, jit on
+#   ./play game.chd --scale 3              3x presentation scale (1-4)
+#   ./play --headless game.chd             no window; bounded session
+#   ./play --headless game.chd --instructions 50000000
+#   ./play --no-jit game.chd               single-step interpreter
+#   ./play --mute game.chd                 disable host audio
+#   ./play --inspect game.chd              show image metadata and exit
+#   ./play game.chd -- --dump-frame out.ppm ...
+#     anything after -- (or any other --flag) is passed straight through
+#     to `psp-rs run` (see `psp-rs run --help`).
+
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BIN="$REPO/target/release/psp-rs"
+
+usage() {
+    sed -n '2,/^set /p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
+    exit "${1:-0}"
+}
+
+# rebuild the release binary when it is missing or older than the sources.
+ensure_built() {
+    if [[ ! -x "$BIN" ]] || [[ -n "$(find "$REPO/Cargo.toml" "$REPO/Cargo.lock" "$REPO/crates" "$REPO/tools" -type f \( -name '*.rs' -o -name '*.wgsl' -o -name '*.toml' -o -name 'Cargo.lock' \) -newer "$BIN" -print -quit 2>/dev/null)" ]]; then
+        echo "play: building release binary..." >&2
+        cargo build --release -p psp-rs --manifest-path "$REPO/Cargo.toml"
+    fi
+}
+
+mode="run"
+scale="2"
+headless=0
+image=""
+declare -a passthrough=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help) usage 0 ;;
+        --inspect) mode="inspect"; shift ;;
+        --headless) headless=1; shift ;;
+        --scale) scale="${2:?--scale needs 1-4}"; shift 2 ;;
+        --scale=*) scale="${1#--scale=}"; shift ;;
+        --no-jit) export PSP_JIT=off; shift ;;
+        --mute) export PSP_AUDIO=off; shift ;;
+        --) shift; while [[ $# -gt 0 ]]; do passthrough+=("$1"); shift; done ;;
+        --*) passthrough+=("$1"); shift ;;
+        *)
+            if [[ -z "$image" ]]; then image="$1"; else passthrough+=("$1"); fi
+            shift ;;
+    esac
+done
+
+[[ -z "$image" ]] && { echo "play: missing image path (try ./play --help)" >&2; exit 1; }
+[[ -f "$image" ]] || { echo "play: not found: $image" >&2; exit 1; }
+case "$image" in
+    *.chd|*.iso|*.pbp|*.elf) ;;
+    *) echo "play: warning: '$image' has an unusual extension (expected .chd/.iso)" >&2 ;;
+esac
+if ! [[ "$scale" =~ ^[1-4]$ ]]; then echo "play: --scale must be 1-4" >&2; exit 1; fi
+
+ensure_built
+
+if [[ "$mode" == "inspect" ]]; then
+    exec "$BIN" inspect "$image"
+fi
+
+declare -a args=(run "$image" --scale "$scale")
+(( headless )) && args+=(--headless)
+args+=("${passthrough[@]}")
+exec "$BIN" "${args[@]}"

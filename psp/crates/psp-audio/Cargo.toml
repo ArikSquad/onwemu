@@ -1,0 +1,13 @@
+[package]
+name="psp-audio"
+version.workspace=true
+edition.workspace=true
+license.workspace=true
+
+[features]
+default = []
+host-audio = ["dep:sdl3"]
+
+[dependencies]
+psp-memory.workspace=true
+sdl3 = { workspace = true, optional = true }

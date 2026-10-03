@@ -1,0 +1,20 @@
+[package]
+name="psp-core"
+version.workspace=true
+edition.workspace=true
+license.workspace=true
+
+[features]
+default = []
+host-audio = ["psp-audio/host-audio"]
+
+[dependencies]
+thiserror.workspace=true
+psp-memory.workspace=true
+psp-cpu.workspace=true
+psp-kernel.workspace=true
+psp-gpu.workspace=true
+psp-audio.workspace=true
+psp-input.workspace=true
+psp-vfs.workspace=true
+psp-debugger.workspace=true

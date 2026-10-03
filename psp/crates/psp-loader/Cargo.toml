@@ -1,0 +1,19 @@
+[package]
+name="psp-loader"
+version.workspace=true
+edition.workspace=true
+license.workspace=true
+[dependencies]
+thiserror.workspace=true
+serde.workspace=true
+psp-memory.workspace=true
+aes.workspace=true
+cbc.workspace=true
+flate2.workspace=true
+sha1.workspace=true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+chd = { version = "0.3.4", default-features = false, features = ["std", "fast_lzma", "fast_zstd"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+chd = { version = "0.3.4", default-features = false, features = ["std", "fast_lzma"] }

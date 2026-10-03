@@ -1,0 +1,7 @@
+/target
+*.iso
+*.cso
+*.chd
+/memory-stick
+/crash-reports
+

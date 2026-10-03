@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="A private, bring-your-own-ROM NES and Game Boy emulator.">
+  <meta name="description" content="A private, bring-your-own-ROM NES, Game Boy, and PSP emulator.">
   <title>onwemu — your ROM, your browser</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -15,6 +15,7 @@
       <div class="systems" role="radiogroup" aria-label="Console">
         <button class="system active" data-system="nes" role="radio" aria-checked="true"><b>NES</b><small>.nes</small></button>
         <button class="system" data-system="gb" role="radio" aria-checked="false"><b>GAME BOY</b><small>.gb</small></button>
+        <button class="system" data-system="psp" role="radio" aria-checked="false"><b>PSP</b><small>.iso · .chd · .pbp · .elf</small></button>
       </div>
       <label class="drop" id="drop"><input id="rom" type="file" accept=".nes" hidden><span class="plus">＋</span><strong>Choose a ROM</strong><small>or drop it right here</small></label>
       <p class="error" id="error" role="alert"></p>
@@ -22,9 +23,9 @@
     <section class="player" id="player" hidden>
       <div class="player-bar"><div><span id="lamp"></span><b id="filename">ROM</b></div><button id="change">Change game</button></div>
       <div class="screen-wrap"><canvas id="screen"></canvas></div>
-      <div class="controls"><span>Move <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd></span><span>A <kbd>Z</kbd></span><span>B <kbd>X</kbd></span><span>Start <kbd>Enter</kbd></span><span>Select <kbd>Shift</kbd></span></div>
+      <div class="controls" id="controls"></div>
     </section>
   </main>
-  <footer><span>onwemu by Artturi K @ mikart.eu.</span><a href="https://github.com/ArikSquad/nesma">NESMA</a><a href="https://github.com/ArikSquad/gbsml">GBSML</a></footer>
+  <footer><span>onwemu © 2026 ArikSquad. PSP-enabled app: AGPL-3.0-only; no warranty; redistribution allowed.</span><a href="https://github.com/ArikSquad/onwemu">Source</a><a href="https://github.com/ArikSquad/onwemu/blob/main/psp/LICENSE">AGPL license</a><a href="https://github.com/ArikSquad/nesma">NESMA</a><a href="https://github.com/ArikSquad/gbsml">GBSML</a></footer>
   <script type="module" src="app.js"></script>
 </body></html>

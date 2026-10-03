@@ -1,0 +1,38 @@
+[package]
+name = "psp-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "psp_runtime"
+path = "src/lib.rs"
+
+[features]
+default = ["desktop"]
+desktop = [
+  "dep:clap",
+  "dep:naga",
+  "dep:sdl3",
+  "dep:tracing-subscriber",
+  "psp-core/host-audio",
+]
+
+[dependencies]
+anyhow.workspace = true
+clap = { workspace = true, optional = true }
+tracing.workspace = true
+tracing-subscriber = { workspace = true, optional = true }
+psp-loader.workspace = true
+psp-core.workspace = true
+psp-cpu.workspace = true
+psp-kernel.workspace = true
+psp-memory.workspace = true
+psp-gpu.workspace = true
+psp-media.workspace = true
+psp-audio.workspace = true
+psp-input.workspace = true
+sdl3 = { workspace = true, optional = true }
+
+[build-dependencies]
+naga = { workspace = true, optional = true }

@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/psp-core", "crates/psp-cpu", "crates/psp-memory", "crates/psp-loader",
+  "crates/psp-kernel", "crates/psp-gpu", "crates/psp-audio", "crates/psp-input",
+  "crates/psp-vfs", "crates/psp-debugger", "crates/psp-media", "crates/psp-runtime", "crates/psp-frontend", "tools/xtask",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+rust-version = "1.88"
+
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+aes = "0.8"
+cbc = "0.1"
+flate2 = "1"
+sha1 = "0.10"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+sdl3 = { version = "0.18.4", features = ["build-from-source"] }
+naga = { version = "28.0.0", default-features = false, features = ["wgsl-in", "spv-out"] }
+psp-memory = { path = "crates/psp-memory" }
+psp-cpu = { path = "crates/psp-cpu" }
+psp-loader = { path = "crates/psp-loader" }
+psp-kernel = { path = "crates/psp-kernel" }
+psp-gpu = { path = "crates/psp-gpu" }
+psp-audio = { path = "crates/psp-audio" }
+psp-media = { path = "crates/psp-media" }
+psp-input = { path = "crates/psp-input" }
+psp-vfs = { path = "crates/psp-vfs" }
+psp-debugger = { path = "crates/psp-debugger" }
+psp-core = { path = "crates/psp-core" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
